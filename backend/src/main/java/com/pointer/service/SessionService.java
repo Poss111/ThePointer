@@ -154,6 +154,27 @@ public class SessionService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
+    public SessionResponse startNewStory(String sessionId, NewStoryRequest request) {
+        Session session = sessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new RuntimeException("Session not found"));
+
+        if (!session.getCreatorName().equals(request.getCreatorName())) {
+            throw new RuntimeException("Only the creator can start a new story.");
+        }
+
+        // Reset voting state and update story
+        session.setStoryName(request.getStoryName());
+        session.setVotingStarted(false);
+        session.setVotingStartTime(null);
+        session.setTimerDurationSeconds(null);
+
+        voteRepository.deleteBySessionId(session.getId());
+        sessionRepository.save(session);
+
+        return mapToSessionResponse(session, request.getCreatorName());
+    }
+
     private SessionResponse mapToSessionResponse(Session session, String currentParticipantName) {
         SessionResponse response = new SessionResponse();
         response.setSessionId(session.getSessionId());

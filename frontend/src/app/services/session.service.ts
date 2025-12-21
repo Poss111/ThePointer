@@ -18,6 +18,11 @@ export interface SubmitVoteRequest {
   points: number;
 }
 
+export interface NewStoryRequest {
+  storyName: string;
+  creatorName: string;
+}
+
 export interface SessionResponse {
   sessionId: string;
   storyName: string;
@@ -70,6 +75,10 @@ export class SessionService {
     return this.http.get<VoteResponse[]>(`${API_URL}/${sessionId}/votes`, {
       params: { participantName }
     });
+  }
+
+  startNewStory(sessionId: string, request: NewStoryRequest): Observable<SessionResponse> {
+    return this.http.post<SessionResponse>(`${API_URL}/${sessionId}/story`, request);
   }
 }
 

@@ -1,5 +1,6 @@
 package com.pointer.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,6 +13,8 @@ public class SessionResponse {
     private Integer timerDurationSeconds;
     private List<String> participants;
     private Long remainingSeconds;
+
+    @JsonProperty("isCreator")
     private boolean isCreator;
 
     public SessionResponse() {

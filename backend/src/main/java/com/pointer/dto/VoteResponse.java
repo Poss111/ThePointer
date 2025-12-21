@@ -1,8 +1,12 @@
 package com.pointer.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class VoteResponse {
     private String participantName;
     private Integer points;
+
+    @JsonProperty("isOwnVote")
     private boolean isOwnVote;
 
     public VoteResponse() {

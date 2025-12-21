@@ -64,6 +64,18 @@ public class SessionController {
         }
     }
 
+    @PostMapping("/{sessionId}/story")
+    public ResponseEntity<SessionResponse> startNewStory(
+            @PathVariable String sessionId,
+            @Valid @RequestBody NewStoryRequest request) {
+        try {
+            SessionResponse response = sessionService.startNewStory(sessionId, request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
     @GetMapping("/{sessionId}")
     public ResponseEntity<SessionResponse> getSession(
             @PathVariable String sessionId,

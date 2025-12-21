@@ -98,6 +98,20 @@ import { interval, Subscription } from 'rxjs';
               <span style="font-weight: bold;">{{ vote.points }} points</span>
             </div>
           </div>
+
+          <div *ngIf="session.isCreator" style="margin-top: 30px;">
+            <h4>Start a new story</h4>
+            <input
+              type="text"
+              [(ngModel)]="newStoryName"
+              placeholder="Enter next story name"
+              [disabled]="isResetting"
+              style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;"
+            />
+            <button (click)="startNewStory()" [disabled]="isResetting">
+              {{ isResetting ? 'Creating...' : 'Create Next Story' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -114,9 +128,11 @@ export class SessionComponent implements OnInit, OnDestroy {
   remainingSeconds = 0;
   fibonacciPoints = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
   isStarting = false;
+  isResetting = false;
   isSubmitting = false;
   errorMessage = '';
   successMessage = '';
+  newStoryName = '';
   private refreshSubscription?: Subscription;
   private timerSubscription?: Subscription;
 
@@ -156,6 +172,12 @@ export class SessionComponent implements OnInit, OnDestroy {
           this.remainingSeconds = session.remainingSeconds || 0;
           this.startTimer();
           this.loadVotes();
+        } else {
+          this.stopTimer();
+          this.remainingSeconds = 0;
+          this.votes = [];
+          this.myVote = null;
+          this.selectedPoints = null;
         }
       },
       error: (error) => {
@@ -202,6 +224,13 @@ export class SessionComponent implements OnInit, OnDestroy {
         }
       }
     });
+  }
+
+  stopTimer() {
+    if (this.timerSubscription) {
+      this.timerSubscription.unsubscribe();
+      this.timerSubscription = undefined;
+    }
   }
 
   startVoting() {
@@ -257,6 +286,42 @@ export class SessionComponent implements OnInit, OnDestroy {
       error: (error) => {
         this.errorMessage = error.error?.message || 'Failed to submit vote. Please try again.';
         this.isSubmitting = false;
+      }
+    });
+  }
+
+  startNewStory() {
+    if (!this.session || !this.session.isCreator) {
+      return;
+    }
+    const trimmedName = this.newStoryName.trim();
+    if (!trimmedName) {
+      this.errorMessage = 'Please enter a story name.';
+      return;
+    }
+
+    this.isResetting = true;
+    this.errorMessage = '';
+    this.successMessage = '';
+
+    this.sessionService.startNewStory(this.sessionId, {
+      storyName: trimmedName,
+      creatorName: this.session.creatorName
+    }).subscribe({
+      next: (session) => {
+        this.session = session;
+        this.newStoryName = '';
+        this.stopTimer();
+        this.remainingSeconds = 0;
+        this.votes = [];
+        this.myVote = null;
+        this.selectedPoints = null;
+        this.isResetting = false;
+        this.successMessage = 'New story created. Waiting to start voting.';
+      },
+      error: () => {
+        this.errorMessage = 'Failed to start new story. Please try again.';
+        this.isResetting = false;
       }
     });
   }
