@@ -84,6 +84,34 @@ The frontend will start on `http://localhost:4200`
    - After the timer expires, all votes are displayed
    - Each participant can see their own vote highlighted
 
+## Workflow
+
+```mermaid
+flowchart TD
+  Home[Home page] -->|Create| CreateSession[POST /api/sessions]
+  Home -->|Join| JoinSession[POST /api/sessions/{id}/join]
+  Home -->|Open history item| LoadSession[GET /api/sessions/{id}?participantName=you]
+
+  CreateSession --> SessionView[Session view]
+  JoinSession --> SessionView
+  LoadSession --> SessionView
+
+  SessionView -->|Creator starts| StartVoting[POST /api/sessions/{id}/start]
+  StartVoting --> Voting[Voting timer running]
+  SessionView -->|Submit vote| SubmitVote[POST /api/sessions/{id}/vote]
+  Voting -->|Poll 2s| Refresh[GET /api/sessions/{id} & /votes]
+  Voting -->|Timer ends| Results[Show all votes]
+
+  Results -->|Creator new story| NewStory[POST /api/sessions/{id}/story]
+  NewStory --> SessionView
+
+  SessionView -->|Leave| Leave[POST /api/sessions/{id}/leave]
+  Leave --> Home
+
+  CreatorLeave[Creator leaves session] -->|Session deleted| AllRedirect[Clients redirected home]
+  Nightly[Midnight cleanup] --> Purge[Delete sessions created before today]
+```
+
 ## API Endpoints
 
 - `POST /api/sessions` - Create a new session

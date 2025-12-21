@@ -12,5 +12,6 @@ public interface VoteRepository extends JpaRepository<Vote, Long> {
     List<Vote> findBySessionId(Long sessionId);
     Optional<Vote> findBySessionIdAndParticipantName(Long sessionId, String participantName);
     void deleteBySessionId(Long sessionId);
+    void deleteBySessionIdAndParticipantName(Long sessionId, String participantName);
 }
 

@@ -41,6 +41,18 @@ export interface VoteResponse {
   isOwnVote: boolean;
 }
 
+export interface LeaveSessionRequest {
+  participantName: string;
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  storyName: string;
+  creatorName: string;
+  createdAt: string;
+  votingStarted: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -79,6 +91,14 @@ export class SessionService {
 
   startNewStory(sessionId: string, request: NewStoryRequest): Observable<SessionResponse> {
     return this.http.post<SessionResponse>(`${API_URL}/${sessionId}/story`, request);
+  }
+
+  leaveSession(sessionId: string, request: LeaveSessionRequest): Observable<void> {
+    return this.http.post<void>(`${API_URL}/${sessionId}/leave`, request);
+  }
+
+  getSessionHistory(): Observable<SessionSummary[]> {
+    return this.http.get<SessionSummary[]>(`${API_URL}/history`);
   }
 }
 

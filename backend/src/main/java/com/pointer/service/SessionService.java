@@ -154,6 +154,19 @@ public class SessionService {
                 .collect(Collectors.toList());
     }
 
+    public List<SessionSummaryResponse> getSessionHistory() {
+        return sessionRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(session -> new SessionSummaryResponse(
+                        session.getSessionId(),
+                        session.getStoryName(),
+                        session.getCreatorName(),
+                        session.getCreatedAt(),
+                        session.isVotingStarted()
+                ))
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public SessionResponse startNewStory(String sessionId, NewStoryRequest request) {
         Session session = sessionRepository.findBySessionId(sessionId)
@@ -173,6 +186,34 @@ public class SessionService {
         sessionRepository.save(session);
 
         return mapToSessionResponse(session, request.getCreatorName());
+    }
+
+    @Transactional
+    public void leaveSession(String sessionId, LeaveSessionRequest request) {
+        Session session = sessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new RuntimeException("Session not found"));
+
+        List<Participant> participants = participantRepository.findBySessionId(session.getId());
+        boolean participantExists = participants.stream()
+                .anyMatch(p -> p.getName().equalsIgnoreCase(request.getParticipantName()));
+
+        if (!participantExists) {
+            throw new RuntimeException("Participant not found in this session.");
+        }
+
+        boolean isCreator = session.getCreatorName().equalsIgnoreCase(request.getParticipantName());
+
+        if (isCreator) {
+            // Creator leaves: clear votes, participants, and delete session to force everyone out
+            voteRepository.deleteBySessionId(session.getId());
+            participantRepository.deleteBySessionId(session.getId());
+            sessionRepository.delete(session);
+            return;
+        }
+
+        // Non-creator leaves: remove their votes and participation
+        voteRepository.deleteBySessionIdAndParticipantName(session.getId(), request.getParticipantName());
+        participantRepository.deleteBySessionIdAndName(session.getId(), request.getParticipantName());
     }
 
     private SessionResponse mapToSessionResponse(Session session, String currentParticipantName) {

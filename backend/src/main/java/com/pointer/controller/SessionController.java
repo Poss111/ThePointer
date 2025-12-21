@@ -76,6 +76,18 @@ public class SessionController {
         }
     }
 
+    @PostMapping("/{sessionId}/leave")
+    public ResponseEntity<Void> leaveSession(
+            @PathVariable String sessionId,
+            @Valid @RequestBody LeaveSessionRequest request) {
+        try {
+            sessionService.leaveSession(sessionId, request);
+            return ResponseEntity.ok().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
     @GetMapping("/{sessionId}")
     public ResponseEntity<SessionResponse> getSession(
             @PathVariable String sessionId,
@@ -97,6 +109,16 @@ public class SessionController {
             return ResponseEntity.ok(votes);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<List<SessionSummaryResponse>> getSessionHistory() {
+        try {
+            List<SessionSummaryResponse> sessions = sessionService.getSessionHistory();
+            return ResponseEntity.ok(sessions);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
     }
 }

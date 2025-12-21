@@ -18,6 +18,9 @@ import { interval, Subscription } from 'rxjs';
           <p *ngIf="session?.isCreator" style="color: #667eea; font-weight: bold; margin-top: 10px;">
             👑 You are the creator
           </p>
+          <button class="secondary" style="margin-top: 10px;" (click)="leaveSession()" [disabled]="isLeaving">
+            {{ isLeaving ? 'Leaving...' : 'Leave session' }}
+          </button>
         </div>
 
         <div *ngIf="errorMessage" class="error-message">
@@ -129,6 +132,7 @@ export class SessionComponent implements OnInit, OnDestroy {
   fibonacciPoints = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
   isStarting = false;
   isResetting = false;
+  isLeaving = false;
   isSubmitting = false;
   errorMessage = '';
   successMessage = '';
@@ -156,6 +160,7 @@ export class SessionComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.leaveIfPossible();
     if (this.refreshSubscription) {
       this.refreshSubscription.unsubscribe();
     }
@@ -203,11 +208,9 @@ export class SessionComponent implements OnInit, OnDestroy {
   }
 
   startPolling() {
-    // Poll every 2 seconds to check for session updates
+    // Poll every 2 seconds to check for session updates and detect closure
     this.refreshSubscription = interval(2000).subscribe(() => {
-      if (this.session && !this.session.votingStarted) {
-        this.loadSession();
-      }
+      this.loadSession();
     });
   }
 
@@ -323,6 +326,39 @@ export class SessionComponent implements OnInit, OnDestroy {
         this.errorMessage = 'Failed to start new story. Please try again.';
         this.isResetting = false;
       }
+    });
+  }
+
+  leaveSession() {
+    if (!this.sessionId || this.isLeaving) {
+      this.router.navigate(['/']);
+      return;
+    }
+
+    this.isLeaving = true;
+    this.sessionService.leaveSession(this.sessionId, {
+      participantName: this.participantName
+    }).subscribe({
+      next: () => {
+        this.router.navigate(['/']);
+      },
+      error: () => {
+        // Even if the request fails, navigate away to avoid stale state
+        this.router.navigate(['/']);
+      }
+    });
+  }
+
+  private leaveIfPossible() {
+    // Fire-and-forget leave; errors intentionally ignored
+    if (!this.sessionId || !this.participantName) {
+      return;
+    }
+    this.sessionService.leaveSession(this.sessionId, {
+      participantName: this.participantName
+    }).subscribe({
+      next: () => {},
+      error: () => {}
     });
   }
 

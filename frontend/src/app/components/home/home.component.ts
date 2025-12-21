@@ -1,8 +1,8 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { SessionService } from '../../services/session.service';
+import { SessionService, SessionSummary } from '../../services/session.service';
 
 @Component({
   selector: 'app-home',
@@ -74,11 +74,99 @@ import { SessionService } from '../../services/session.service';
           {{ isJoining ? 'Joining...' : 'Join Session' }}
         </button>
       </div>
+
+      <button class="history-toggle" (click)="toggleHistory()">
+        {{ showHistory ? 'Hide history' : 'Show history' }}
+      </button>
+
+      <div class="history-tab" [class.open]="showHistory">
+        <div class="history-header">
+          <h3>Today’s sessions</h3>
+          <button class="secondary" (click)="toggleHistory()" style="margin-left: auto;">
+            {{ showHistory ? 'Hide' : 'Show' }}
+          </button>
+        </div>
+        <div *ngIf="historyError" class="error-message" style="margin-top: 10px;">
+          {{ historyError }}
+        </div>
+        <div *ngIf="sessionHistory.length === 0 && !historyError" style="color: #666; margin-top: 10px;">
+          No sessions yet today.
+        </div>
+        <div class="history-list" *ngIf="sessionHistory.length > 0">
+          <div *ngFor="let item of sessionHistory" class="history-item">
+            <div style="font-weight: bold;">{{ item.storyName }}</div>
+            <div style="color: #666;">{{ item.creatorName }} • {{ item.createdAt | date:'shortTime' }}</div>
+            <div style="margin-top: 6px;">
+              <span class="badge">ID: {{ item.sessionId }}</span>
+              <span class="badge" [class.active]="item.votingStarted">{{ item.votingStarted ? 'In progress' : 'Not started' }}</span>
+            </div>
+            <button class="secondary" style="margin-top: 8px;" (click)="goToSession(item.sessionId)">
+              Open
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
-  styles: []
+  styles: [`
+    .history-tab {
+      position: fixed;
+      right: 0;
+      top: 0;
+      height: 100vh;
+      width: 320px;
+      background: #f8f9ff;
+      border-left: 1px solid #e0e0e0;
+      padding: 20px;
+      box-shadow: -4px 0 12px rgba(0,0,0,0.04);
+      transform: translateX(100%);
+      transition: transform 0.2s ease-in-out;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    .history-tab.open {
+      transform: translateX(0);
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .history-list {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .history-item {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #4c51bf;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    .badge.active {
+      background: #e6fffa;
+      color: #0b9e7c;
+    }
+    .history-toggle {
+      position: fixed;
+      right: 12px;
+      bottom: 20px;
+      z-index: 11;
+    }
+  `]
 })
-export class HomeComponent {
+export class HomeComponent implements OnInit {
   storyName = '';
   creatorName = '';
   joinSessionId = '';
@@ -86,11 +174,47 @@ export class HomeComponent {
   isCreating = false;
   isJoining = false;
   errorMessage = '';
+  sessionHistory: SessionSummary[] = [];
+  historyError = '';
+  showHistory = false;
 
   constructor(
     private sessionService: SessionService,
     private router: Router
   ) {}
+
+  ngOnInit() {
+    this.loadHistory();
+  }
+
+  toggleHistory() {
+    this.showHistory = !this.showHistory;
+    if (this.showHistory && this.sessionHistory.length === 0) {
+      this.loadHistory();
+    }
+  }
+
+  loadHistory() {
+    this.historyError = '';
+    this.sessionService.getSessionHistory().subscribe({
+      next: (sessions) => {
+        this.sessionHistory = sessions;
+      },
+      error: () => {
+        this.historyError = 'Unable to load session history right now.';
+      }
+    });
+  }
+
+  goToSession(sessionId: string) {
+    if (!this.participantName.trim()) {
+      this.errorMessage = 'Enter your name before opening a session from history.';
+      return;
+    }
+    this.router.navigate(['/session', sessionId], {
+      queryParams: { participantName: this.participantName.trim() }
+    });
+  }
 
   createSession() {
     if (!this.storyName.trim() || !this.creatorName.trim()) {

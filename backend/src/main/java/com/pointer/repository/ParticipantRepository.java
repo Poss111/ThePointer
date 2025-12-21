@@ -9,5 +9,7 @@ import java.util.List;
 @Repository
 public interface ParticipantRepository extends JpaRepository<Participant, Long> {
     List<Participant> findBySessionId(Long sessionId);
+    void deleteBySessionId(Long sessionId);
+    void deleteBySessionIdAndName(Long sessionId, String name);
 }
 
