@@ -33,6 +33,7 @@ export interface SessionResponse {
   participants: string[];
   remainingSeconds?: number;
   isCreator: boolean;
+  jiraIssue?: JiraIssueResponse | null;
 }
 
 export interface VoteResponse {
@@ -51,6 +52,17 @@ export interface SessionSummary {
   creatorName: string;
   createdAt: string;
   votingStarted: boolean;
+}
+
+export interface JiraIssueRequest {
+  issueKey: string;
+}
+
+export interface JiraIssueResponse {
+  key: string;
+  summary: string;
+  status: string;
+  description: string;
 }
 
 @Injectable({
@@ -105,6 +117,12 @@ export class SessionService {
 
   getSessionHistory(): Observable<SessionSummary[]> {
     return this.http.get<SessionSummary[]>(`${API_URL}/history`);
+  }
+
+  loadJiraIssueForSession(sessionId: string, issueKey: string, creatorName: string): Observable<JiraIssueResponse> {
+    return this.http.post<JiraIssueResponse>(`http://localhost:8080/api/sessions/${sessionId}/jira`, { issueKey }, {
+      params: { creatorName }
+    });
   }
 }
 

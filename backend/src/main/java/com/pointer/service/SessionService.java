@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,6 +34,11 @@ public class SessionService {
 
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
+
+    @Autowired
+    private JiraIntegrationService jiraIntegrationService;
+
+    private final Map<String, JiraIssueResponse> jiraCache = new ConcurrentHashMap<>();
 
     private static final int MAX_PARTICIPANTS = 15;
     private static final int DEFAULT_TIMER_DURATION = 60; // 60 seconds default
@@ -217,6 +224,7 @@ public class SessionService {
         sessionRepository.save(session);
 
         SessionResponse response = mapToSessionResponse(session, request.getCreatorName());
+        jiraCache.remove(session.getSessionId());
         publishSession(session);
         return response;
     }
@@ -241,6 +249,7 @@ public class SessionService {
             voteRepository.deleteBySessionId(session.getId());
             participantRepository.deleteBySessionId(session.getId());
             sessionRepository.delete(session);
+            jiraCache.remove(session.getSessionId());
             publishSessionClosed(session.getSessionId());
             return;
         }
@@ -249,6 +258,21 @@ public class SessionService {
         voteRepository.deleteBySessionIdAndParticipantName(session.getId(), request.getParticipantName());
         participantRepository.deleteBySessionIdAndName(session.getId(), request.getParticipantName());
         publishSession(session);
+    }
+
+    @Transactional(readOnly = true)
+    public JiraIssueResponse loadJiraIssue(String sessionId, String creatorName, JiraIssueRequest request) {
+        Session session = sessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new RuntimeException("Session not found"));
+
+        if (!session.getCreatorName().equals(creatorName)) {
+            throw new RuntimeException("Only the creator can load JIRA issues.");
+        }
+
+        JiraIssueResponse issue = jiraIntegrationService.fetchIssue(request);
+        jiraCache.put(sessionId, issue);
+        publishSession(session);
+        return issue;
     }
 
     private SessionResponse mapToSessionResponse(Session session, String currentParticipantName) {
@@ -260,6 +284,7 @@ public class SessionService {
         response.setVotingStartTime(session.getVotingStartTime());
         response.setTimerDurationSeconds(session.getTimerDurationSeconds());
         response.setCreator(session.getCreatorName().equals(currentParticipantName));
+        response.setJiraIssue(jiraCache.get(session.getSessionId()));
 
         List<String> participantNames = participantRepository.findBySessionId(session.getId())
                 .stream()

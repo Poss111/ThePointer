@@ -17,6 +17,8 @@ public class SessionResponse {
     @JsonProperty("isCreator")
     private boolean isCreator;
 
+    private JiraIssueResponse jiraIssue;
+
     public SessionResponse() {
     }
 
@@ -90,6 +92,14 @@ public class SessionResponse {
 
     public void setCreator(boolean creator) {
         isCreator = creator;
+    }
+
+    public JiraIssueResponse getJiraIssue() {
+        return jiraIssue;
+    }
+
+    public void setJiraIssue(JiraIssueResponse jiraIssue) {
+        this.jiraIssue = jiraIssue;
     }
 }
 

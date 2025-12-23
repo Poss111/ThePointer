@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { SessionService, SessionResponse, VoteResponse } from '../../services/session.service';
+import { SessionService, SessionResponse, VoteResponse, JiraIssueResponse, JiraIssueRequest } from '../../services/session.service';
 import { RealtimeService, SessionUpdateMessage } from '../../services/realtime.service';
 import { interval, Subscription } from 'rxjs';
 
@@ -22,6 +22,42 @@ import { interval, Subscription } from 'rxjs';
           <button class="secondary" style="margin-top: 10px;" (click)="leaveSession()" [disabled]="isLeaving">
             {{ isLeaving ? 'Leaving...' : 'Leave session' }}
           </button>
+        </div>
+
+        <div class="jira-card">
+          <div style="display: flex; align-items: center; gap: 10px; justify-content: space-between;">
+            <h3 style="margin: 0;">JIRA Story</h3>
+            <button class="secondary" (click)="showJiraPanel = !showJiraPanel">
+              {{ showJiraPanel ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+
+          <div *ngIf="showJiraPanel" style="margin-top: 10px; display: grid; gap: 10px;">
+            <ng-container *ngIf="session?.isCreator; else readOnlyJira">
+              <div class="form-row">
+                <label>Issue Key</label>
+                <input type="text" [(ngModel)]="jiraIssueKey" placeholder="ABC-123" [disabled]="isLoadingJira" />
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <button (click)="loadJiraIssue()" [disabled]="isLoadingJira"> {{ isLoadingJira ? 'Loading...' : 'Load issue' }} </button>
+                <button class="secondary" (click)="clearJira()" [disabled]="isLoadingJira">Clear</button>
+                <span *ngIf="jiraError" class="error-message" style="margin-left: auto;">{{ jiraError }}</span>
+              </div>
+            </ng-container>
+            <ng-template #readOnlyJira>
+              <div style="color: #666;">Only the creator can load JIRA issues.</div>
+            </ng-template>
+
+            <div *ngIf="jiraIssue" class="jira-issue">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: bold; font-size: 16px;">{{ jiraIssue.key }} - {{ jiraIssue.summary }}</div>
+                  <div style="color: #555; margin-top: 4px;">Status: {{ jiraIssue.status }}</div>
+                </div>
+              </div>
+              <div class="jira-description" [innerText]="jiraIssue.description || 'No description.'"></div>
+            </div>
+          </div>
         </div>
 
         <div *ngIf="errorMessage" class="error-message">
@@ -180,6 +216,39 @@ import { interval, Subscription } from 'rxjs';
       color: #15803d;
       border-color: #bbf7d0;
     }
+    .jira-card {
+      border: 1px solid #e0e0e0;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 16px 0;
+      background: #f9fafb;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-row input {
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+    }
+    .jira-issue {
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .jira-description {
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 8px;
+      border-radius: 6px;
+      margin-top: 8px;
+      max-height: 200px;
+      overflow: auto;
+    }
   `]
 })
 export class SessionComponent implements OnInit, OnDestroy {
@@ -199,6 +268,12 @@ export class SessionComponent implements OnInit, OnDestroy {
   errorMessage = '';
   successMessage = '';
   newStoryName = '';
+  // JIRA integration
+  jiraIssueKey = '';
+  jiraIssue: JiraIssueResponse | null = null;
+  jiraError = '';
+  isLoadingJira = false;
+  showJiraPanel = false;
   private timerSubscription?: Subscription;
   private realtimeSubscription?: Subscription;
 
@@ -244,6 +319,7 @@ export class SessionComponent implements OnInit, OnDestroy {
         this.session = session;
         this.session.isCreator = session.creatorName === this.participantName;
         this.saveSessionName(this.sessionId, this.participantName);
+        this.jiraIssue = session.jiraIssue || null;
         if (session.votingStarted) {
           this.remainingSeconds = session.remainingSeconds || 0;
           this.startTimer();
@@ -417,6 +493,7 @@ export class SessionComponent implements OnInit, OnDestroy {
         if (this.remainingSeconds <= 0) {
           this.stopTimer();
         }
+        this.jiraIssue = session.jiraIssue || null;
         this.isSubmitting = false;
       },
       error: () => {
@@ -441,6 +518,7 @@ export class SessionComponent implements OnInit, OnDestroy {
     session.isCreator = session.creatorName === this.participantName;
     this.session = session;
     this.saveSessionName(this.sessionId, this.participantName);
+    this.jiraIssue = session.jiraIssue || null;
 
     if (session.votingStarted) {
       this.remainingSeconds = session.remainingSeconds || 0;
@@ -456,6 +534,38 @@ export class SessionComponent implements OnInit, OnDestroy {
       this.applyVotes(message.votes);
     }
   }
+
+  loadJiraIssue() {
+    this.jiraError = '';
+    this.jiraIssue = null;
+
+    if (!this.jiraIssueKey) {
+      this.jiraError = 'Enter a JIRA issue key.';
+      return;
+    }
+
+    const payload: JiraIssueRequest = {
+      issueKey: this.jiraIssueKey.trim()
+    };
+
+    this.isLoadingJira = true;
+    this.sessionService.loadJiraIssueForSession(this.sessionId, payload.issueKey, this.participantName).subscribe({
+      next: (issue) => {
+        this.jiraIssue = issue;
+        this.isLoadingJira = false;
+      },
+      error: () => {
+        this.jiraError = 'Failed to load issue. Check credentials and issue key.';
+        this.isLoadingJira = false;
+      }
+    });
+  }
+
+  clearJira() {
+    this.jiraIssue = null;
+    this.jiraError = '';
+  }
+
 
   private applyVotes(votes: VoteResponse[]) {
     this.votes = votes.map(v => ({

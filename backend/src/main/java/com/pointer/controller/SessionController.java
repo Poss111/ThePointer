@@ -124,6 +124,19 @@ public class SessionController {
         }
     }
 
+    @PostMapping("/{sessionId}/jira")
+    public ResponseEntity<JiraIssueResponse> loadJiraIssue(
+            @PathVariable String sessionId,
+            @RequestParam String creatorName,
+            @Valid @RequestBody JiraIssueRequest request) {
+        try {
+            JiraIssueResponse response = sessionService.loadJiraIssue(sessionId, creatorName, request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
     @GetMapping("/history")
     public ResponseEntity<List<SessionSummaryResponse>> getSessionHistory() {
         try {
