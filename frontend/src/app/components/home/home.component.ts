@@ -184,6 +184,7 @@ export class HomeComponent implements OnInit {
   ) {}
 
   ngOnInit() {
+    this.loadSavedName();
     this.loadHistory();
   }
 
@@ -225,11 +226,14 @@ export class HomeComponent implements OnInit {
     this.isCreating = true;
     this.errorMessage = '';
 
+    const creatorName = this.creatorName.trim();
     this.sessionService.createSession({
       storyName: this.storyName.trim(),
-      creatorName: this.creatorName.trim()
+      creatorName
     }).subscribe({
       next: (response) => {
+        this.saveDefaultName(creatorName);
+        this.saveSessionName(response.sessionId, creatorName);
         this.router.navigate(['/session', response.sessionId], {
           queryParams: { participantName: response.creatorName }
         });
@@ -250,12 +254,16 @@ export class HomeComponent implements OnInit {
     this.isJoining = true;
     this.errorMessage = '';
 
-    this.sessionService.joinSession(this.joinSessionId.trim(), {
-      participantName: this.participantName.trim()
+    const participantName = this.participantName.trim();
+    const sessionId = this.joinSessionId.trim();
+    this.sessionService.joinSession(sessionId, {
+      participantName
     }).subscribe({
       next: (response) => {
+        this.saveDefaultName(participantName);
+        this.saveSessionName(sessionId, participantName);
         this.router.navigate(['/session', response.sessionId], {
-          queryParams: { participantName: this.participantName.trim() }
+          queryParams: { participantName }
         });
       },
       error: (error) => {
@@ -263,6 +271,29 @@ export class HomeComponent implements OnInit {
         this.isJoining = false;
       }
     });
+  }
+
+  private loadSavedName() {
+    const saved = localStorage.getItem('pointer_default_name');
+    if (saved) {
+      this.creatorName = saved;
+      this.participantName = saved;
+    }
+  }
+
+  private saveDefaultName(name: string) {
+    localStorage.setItem('pointer_default_name', name);
+  }
+
+  private saveSessionName(sessionId: string, name: string) {
+    try {
+      const raw = localStorage.getItem('pointer_session_names');
+      const parsed = raw ? JSON.parse(raw) : {};
+      parsed[sessionId] = name;
+      localStorage.setItem('pointer_session_names', JSON.stringify(parsed));
+    } catch (e) {
+      console.warn('Failed to persist session name', e);
+    }
   }
 }
 

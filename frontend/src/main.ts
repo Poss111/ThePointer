@@ -4,6 +4,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { routes } from './app/app.routes';
 
+// Polyfill for libraries expecting Node's global in the browser (e.g., STOMP/SockJS)
+(window as any).global = window;
+
 bootstrapApplication(AppComponent, {
   providers: [
     provideHttpClient(),

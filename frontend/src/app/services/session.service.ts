@@ -73,6 +73,12 @@ export class SessionService {
     });
   }
 
+  endVoting(sessionId: string, creatorName: string): Observable<SessionResponse> {
+    return this.http.post<SessionResponse>(`${API_URL}/${sessionId}/end`, null, {
+      params: { creatorName }
+    });
+  }
+
   submitVote(sessionId: string, request: SubmitVoteRequest): Observable<VoteResponse> {
     return this.http.post<VoteResponse>(`${API_URL}/${sessionId}/vote`, request);
   }

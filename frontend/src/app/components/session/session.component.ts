@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { SessionService, SessionResponse, VoteResponse } from '../../services/session.service';
+import { RealtimeService, SessionUpdateMessage } from '../../services/realtime.service';
 import { interval, Subscription } from 'rxjs';
 
 @Component({
@@ -65,6 +66,26 @@ import { interval, Subscription } from 'rxjs';
             {{ formatTime(remainingSeconds) }}
           </div>
 
+        <div *ngIf="session?.isCreator && allVoted() && remainingSeconds > 0" style="margin: 10px 0;">
+          <button (click)="concludeVoting()" [disabled]="isSubmitting">
+            Conclude Now (all votes in)
+          </button>
+        </div>
+
+          <div class="participants-status" *ngIf="session?.participants?.length">
+            <div
+              *ngFor="let participant of session.participants"
+              class="participant-status"
+              [class.voted]="hasVoted(participant)"
+              [class.me]="participant === participantName"
+            >
+              <span>{{ participant }}</span>
+              <span class="status-pill">
+                {{ hasVoted(participant) ? 'Voted' : 'Waiting' }}
+              </span>
+            </div>
+          </div>
+
           <h3>Select your points:</h3>
           <div class="voting-grid">
             <div
@@ -119,7 +140,47 @@ import { interval, Subscription } from 'rxjs';
       </div>
     </div>
   `,
-  styles: []
+  styles: [`
+    .participants-status {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .participant-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .participant-status.me {
+      border-color: #667eea;
+      background: #eef2ff;
+    }
+    .participant-status.voted {
+      border-color: #0b9e7c;
+      background: #e6fffa;
+    }
+    .participant-status span {
+      font-size: 14px;
+    }
+    .status-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+    }
+    .participant-status.voted .status-pill {
+      background: #dcfce7;
+      color: #15803d;
+      border-color: #bbf7d0;
+    }
+  `]
 })
 export class SessionComponent implements OnInit, OnDestroy {
   sessionId = '';
@@ -129,7 +190,8 @@ export class SessionComponent implements OnInit, OnDestroy {
   selectedPoints: number | null = null;
   myVote: VoteResponse | null = null;
   remainingSeconds = 0;
-  fibonacciPoints = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+  // Classic Fibonacci planning-poker values
+  fibonacciPoints = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
   isStarting = false;
   isResetting = false;
   isLeaving = false;
@@ -137,18 +199,25 @@ export class SessionComponent implements OnInit, OnDestroy {
   errorMessage = '';
   successMessage = '';
   newStoryName = '';
-  private refreshSubscription?: Subscription;
   private timerSubscription?: Subscription;
+  private realtimeSubscription?: Subscription;
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
-    private sessionService: SessionService
+    private sessionService: SessionService,
+    private realtimeService: RealtimeService
   ) {}
 
   ngOnInit() {
     this.sessionId = this.route.snapshot.paramMap.get('sessionId') || '';
     this.participantName = this.route.snapshot.queryParamMap.get('participantName') || '';
+    if (!this.participantName) {
+      const saved = this.getSavedName(this.sessionId);
+      if (saved) {
+        this.participantName = saved;
+      }
+    }
 
     if (!this.sessionId || !this.participantName) {
       this.router.navigate(['/']);
@@ -156,14 +225,14 @@ export class SessionComponent implements OnInit, OnDestroy {
     }
 
     this.loadSession();
-    this.startPolling();
+    this.connectRealtime();
   }
 
   ngOnDestroy() {
-    this.leaveIfPossible();
-    if (this.refreshSubscription) {
-      this.refreshSubscription.unsubscribe();
+    if (this.realtimeSubscription) {
+      this.realtimeSubscription.unsubscribe();
     }
+    this.leaveIfPossible();
     if (this.timerSubscription) {
       this.timerSubscription.unsubscribe();
     }
@@ -173,6 +242,8 @@ export class SessionComponent implements OnInit, OnDestroy {
     this.sessionService.getSession(this.sessionId, this.participantName).subscribe({
       next: (session) => {
         this.session = session;
+        this.session.isCreator = session.creatorName === this.participantName;
+        this.saveSessionName(this.sessionId, this.participantName);
         if (session.votingStarted) {
           this.remainingSeconds = session.remainingSeconds || 0;
           this.startTimer();
@@ -204,13 +275,6 @@ export class SessionComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Failed to load votes', error);
       }
-    });
-  }
-
-  startPolling() {
-    // Poll every 2 seconds to check for session updates and detect closure
-    this.refreshSubscription = interval(2000).subscribe(() => {
-      this.loadSession();
     });
   }
 
@@ -327,6 +391,114 @@ export class SessionComponent implements OnInit, OnDestroy {
         this.isResetting = false;
       }
     });
+  }
+
+  connectRealtime() {
+    if (this.realtimeSubscription) {
+      return;
+    }
+    this.realtimeSubscription = this.realtimeService.connectToSession(this.sessionId).subscribe({
+      next: (message: SessionUpdateMessage) => this.handleRealtime(message),
+      error: () => {
+        // reconnect handled by stomp client; ignore errors here
+      }
+    });
+  }
+
+  concludeVoting() {
+    if (!this.session || !this.session.isCreator) {
+      return;
+    }
+    this.isSubmitting = true;
+    this.sessionService.endVoting(this.sessionId, this.session.creatorName).subscribe({
+      next: (session) => {
+        this.session = session;
+        this.remainingSeconds = session.remainingSeconds || 0;
+        if (this.remainingSeconds <= 0) {
+          this.stopTimer();
+        }
+        this.isSubmitting = false;
+      },
+      error: () => {
+        this.errorMessage = 'Failed to conclude voting early.';
+        this.isSubmitting = false;
+      }
+    });
+  }
+
+  handleRealtime(message: SessionUpdateMessage) {
+    if (message.type === 'SESSION_CLOSED') {
+      this.errorMessage = 'Session has ended.';
+      this.stopTimer();
+      setTimeout(() => this.router.navigate(['/']), 1500);
+      return;
+    }
+    if (!message.session) {
+      return;
+    }
+
+    const session = message.session;
+    session.isCreator = session.creatorName === this.participantName;
+    this.session = session;
+    this.saveSessionName(this.sessionId, this.participantName);
+
+    if (session.votingStarted) {
+      this.remainingSeconds = session.remainingSeconds || 0;
+      this.startTimer();
+    } else {
+      this.stopTimer();
+      this.remainingSeconds = 0;
+      this.selectedPoints = null;
+      this.myVote = null;
+    }
+
+    if (message.votes) {
+      this.applyVotes(message.votes);
+    }
+  }
+
+  private applyVotes(votes: VoteResponse[]) {
+    this.votes = votes.map(v => ({
+      ...v,
+      isOwnVote: v.participantName === this.participantName
+    }));
+    this.myVote = this.votes.find(v => v.isOwnVote) || null;
+    if (this.myVote) {
+      this.selectedPoints = this.myVote.points;
+    }
+  }
+
+  private getSavedName(sessionId: string): string | null {
+    try {
+      const raw = localStorage.getItem('pointer_session_names');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed[sessionId] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveSessionName(sessionId: string, name: string) {
+    try {
+      const raw = localStorage.getItem('pointer_session_names');
+      const parsed = raw ? JSON.parse(raw) : {};
+      parsed[sessionId] = name;
+      localStorage.setItem('pointer_session_names', JSON.stringify(parsed));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  hasVoted(name: string): boolean {
+    return this.votes.some(v => v.participantName === name);
+  }
+
+  allVoted(): boolean {
+    if (!this.session) {
+      return false;
+    }
+    return this.session.participants.every(p => this.hasVoted(p));
   }
 
   leaveSession() {

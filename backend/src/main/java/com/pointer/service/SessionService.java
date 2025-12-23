@@ -8,6 +8,7 @@ import com.pointer.repository.ParticipantRepository;
 import com.pointer.repository.SessionRepository;
 import com.pointer.repository.VoteRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,9 @@ public class SessionService {
 
     @Autowired
     private VoteRepository voteRepository;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     private static final int MAX_PARTICIPANTS = 15;
     private static final int DEFAULT_TIMER_DURATION = 60; // 60 seconds default
@@ -70,7 +74,9 @@ public class SessionService {
         Participant participant = new Participant(request.getParticipantName(), session);
         participantRepository.save(participant);
 
-        return mapToSessionResponse(session, request.getParticipantName());
+        SessionResponse response = mapToSessionResponse(session, request.getParticipantName());
+        publishSession(session);
+        return response;
     }
 
     @Transactional
@@ -91,7 +97,31 @@ public class SessionService {
         session.setTimerDurationSeconds(DEFAULT_TIMER_DURATION);
         session = sessionRepository.save(session);
 
-        return mapToSessionResponse(session, creatorName);
+        SessionResponse response = mapToSessionResponse(session, creatorName);
+        publishSession(session);
+        return response;
+    }
+
+    @Transactional
+    public SessionResponse endVotingEarly(String sessionId, String creatorName) {
+        Session session = sessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new RuntimeException("Session not found"));
+
+        if (!session.getCreatorName().equals(creatorName)) {
+            throw new RuntimeException("Only the creator can end voting.");
+        }
+
+        if (!session.isVotingStarted()) {
+            throw new RuntimeException("Voting has not started.");
+        }
+
+        // Force timer to expire immediately
+        session.setTimerDurationSeconds(0);
+        sessionRepository.save(session);
+
+        SessionResponse response = mapToSessionResponse(session, creatorName);
+        publishSession(session);
+        return response;
     }
 
     @Transactional
@@ -129,6 +159,7 @@ public class SessionService {
             voteRepository.save(vote);
         }
 
+        publishSession(session);
         return new VoteResponse(request.getParticipantName(), request.getPoints(), true);
     }
 
@@ -185,7 +216,9 @@ public class SessionService {
         voteRepository.deleteBySessionId(session.getId());
         sessionRepository.save(session);
 
-        return mapToSessionResponse(session, request.getCreatorName());
+        SessionResponse response = mapToSessionResponse(session, request.getCreatorName());
+        publishSession(session);
+        return response;
     }
 
     @Transactional
@@ -208,12 +241,14 @@ public class SessionService {
             voteRepository.deleteBySessionId(session.getId());
             participantRepository.deleteBySessionId(session.getId());
             sessionRepository.delete(session);
+            publishSessionClosed(session.getSessionId());
             return;
         }
 
         // Non-creator leaves: remove their votes and participation
         voteRepository.deleteBySessionIdAndParticipantName(session.getId(), request.getParticipantName());
         participantRepository.deleteBySessionIdAndName(session.getId(), request.getParticipantName());
+        publishSession(session);
     }
 
     private SessionResponse mapToSessionResponse(Session session, String currentParticipantName) {
@@ -255,6 +290,33 @@ public class SessionService {
         long elapsedSeconds = ChronoUnit.SECONDS.between(session.getVotingStartTime(), LocalDateTime.now());
         long remaining = session.getTimerDurationSeconds() - elapsedSeconds;
         return Math.max(0, remaining);
+    }
+
+    private void publishSession(Session session) {
+        SessionResponse response = mapToSessionResponse(session, session.getCreatorName());
+        // Broadcasts should not mark creator for any specific client
+        response.setCreator(false);
+
+        List<VoteResponse> votes = voteRepository.findBySessionId(session.getId())
+                .stream()
+                .map(vote -> new VoteResponse(
+                        vote.getParticipantName(),
+                        vote.getPoints(),
+                        false
+                ))
+                .collect(Collectors.toList());
+
+        messagingTemplate.convertAndSend(
+                "/topic/sessions/" + session.getSessionId(),
+                new SessionUpdateMessage("SESSION_UPDATE", response, votes)
+        );
+    }
+
+    private void publishSessionClosed(String sessionId) {
+        messagingTemplate.convertAndSend(
+                "/topic/sessions/" + sessionId,
+                SessionUpdateMessage.closed()
+        );
     }
 }
 

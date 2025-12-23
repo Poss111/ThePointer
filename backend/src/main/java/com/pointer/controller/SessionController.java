@@ -52,6 +52,18 @@ public class SessionController {
         }
     }
 
+    @PostMapping("/{sessionId}/end")
+    public ResponseEntity<SessionResponse> endVoting(
+            @PathVariable String sessionId,
+            @RequestParam String creatorName) {
+        try {
+            SessionResponse response = sessionService.endVotingEarly(sessionId, creatorName);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
     @PostMapping("/{sessionId}/vote")
     public ResponseEntity<VoteResponse> submitVote(
             @PathVariable String sessionId,
